@@ -1,0 +1,43 @@
+From e7539bd772ca6e12d3e05fb56da274cf78ee1edf Mon Sep 17 00:00:00 2001
+From: TJ Saunders <tj@castaglia.org>
+Date: Wed, 11 Dec 2024 15:55:16 -0800
+Subject: [PATCH] While investigating Issue #1855, I discovered a long-hidden
+ bug in mod_sftp, where the list of GIDs for the logged-in user was not being
+ appropriately copied out of the session pool.
+
+This was manifesting as a segfault in my local tests, when the `HideNoAccess` directive is in effect for an SFTP session.
+---
+ contrib/mod_sftp/auth.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/contrib/mod_sftp/auth.c b/contrib/mod_sftp/auth.c
+index 6196fec4a..c840bdc59 100644
+--- a/contrib/mod_sftp/auth.c
++++ b/contrib/mod_sftp/auth.c
+@@ -370,6 +370,7 @@ static int setup_env(pool *p, const char *user) {
+   }
+ 
+   session.user = pstrdup(p, pw->pw_name);
++  session.user_homedir = pstrdup(p, pw->pw_dir);
+   session.group = pstrdup(p, pr_auth_gid2name(p, pw->pw_gid));
+ 
+   session.login_uid = pw->pw_uid;
+@@ -686,10 +687,18 @@ static int setup_env(pool *p, const char *user) {
+ 
+   session.user = pstrdup(session.pool, session.user);
+ 
++  if (session.user_homedir != NULL) {
++    session.user_homedir = pstrdup(session.pool, session.user_homedir);
++  }
++
+   if (session.group != NULL) {
+     session.group = pstrdup(session.pool, session.group);
+   }
+ 
++  if (session.gids != NULL) {
++    session.gids = copy_array(session.pool, session.gids);
++  }
++
+   session.groups = copy_array_str(session.pool, session.groups);
+ 
+   pr_resolve_fs_map();

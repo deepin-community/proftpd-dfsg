@@ -1,0 +1,36 @@
+From 784a8e28332059cd6f41e7bcfbdc9b0142fe2c13 Mon Sep 17 00:00:00 2001
+From: Florian Weimer <fweimer@redhat.com>
+Date: Sat, 6 Jan 2024 20:55:32 +0100
+Subject: [PATCH] configure: Use char ** for the iconv input argument (#1754)
+
+The standard iconv function uses char ** even for the input buffer.
+Using the incompatible const char ** type causes the check to fail if
+the compiler treats such type errors as errors, instead of merely
+warning about it.
+---
+ configure    | 2 +-
+ configure.in | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+--- proftpd.orig/configure
++++ proftpd/configure
+@@ -21419,7 +21419,7 @@
+ {
+ 
+     size_t res, in_len = 0, out_len = 0;
+-    const char *in = NULL;
++    char *in = NULL;
+     char *out = NULL;
+     res = iconv((iconv_t)-1, &in, &in_len, &out, &out_len);
+ 
+--- proftpd.orig/configure.in
++++ proftpd/configure.in
+@@ -2044,7 +2044,7 @@
+   ],
+   [ 
+     size_t res, in_len = 0, out_len = 0;
+-    const char *in = NULL;
++    char *in = NULL;
+     char *out = NULL;
+     res = iconv((iconv_t)-1, &in, &in_len, &out, &out_len);
+   ],
