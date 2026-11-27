@@ -20,3 +20,24 @@ odbc
 e7539bd772ca6e12d3e05fb56da274cf78ee1edf.diff
 14c006b62c09d1efe302c57b2d183a489bcb22dc.diff
 9b2b4a3e32d251798bf8fa841b124ab15ba58f11.diff
+2052_pghmcfc.diff
+# issue 2057, CVE-2026-44331
+07797aba88dca902da7eaf1dfe262c8896943de7.diff
+# issue 2115, CVE-2026-53994
+mod_sftp-1.3.8d-issue2115.diff
+# issue 2201, CVE-2026-63091
+baf4b7929758c72cdb6cf16325fa25f435d23db6.diff
+# issue 2190, CVE-2026-63090
+mod_sftp-1.3.8d-issue2190.diff
+# Debian #1151962 #1 Issue #1963 (PR #1970)
+0b5a1611312ee70ffd38693bb4374cb8668a6e6e.diff
+# Debian #1151962 #2 Issue #2056 (PR #2076)
+508eb4d1b8c550b5f3059ad5b33d60c6b6c76bc7.diff
+# Debian #1151962 #3 Issue #2093 (PR #2094)
+c1607a2a219d56443809de326e673b4e38b3bc58.diff
+# CVE-2026-119147
+1570fd3b7a70b447bd59b175ed7fb01fb3d8242b.diff
+# CVE-2026-119146
+4bafd1e9861506e77b9ea3ed277b58e60eacfe4d.diff
+# CVE-2026-119364
+ab5c8cd35f85b75e90019a32674a1f1062268bec.diff

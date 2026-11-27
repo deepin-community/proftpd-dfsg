@@ -1,0 +1,24 @@
+From c1607a2a219d56443809de326e673b4e38b3bc58 Mon Sep 17 00:00:00 2001
+From: TJ Saunders <tj@castaglia.org>
+Date: Tue, 19 May 2026 14:46:56 -0700
+Subject: [PATCH] Issue #2093: Check for a null `ctrl_ssl` pointer, as is
+ already done in the master branch, before calling OpenSSL APIs on it and
+ triggering a null pointer dereference crash.
+
+Note that this is a regression in the 1.3.9 branch, caused by changes for addressing Issue #1963.
+---
+ contrib/mod_tls.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/contrib/mod_tls.c b/contrib/mod_tls.c
+index fede5b8cd1..ad476bb210 100644
+--- a/contrib/mod_tls.c
++++ b/contrib/mod_tls.c
+@@ -9073,6 +9073,7 @@ static void tls_end_sess(SSL *ssl, conn_t *conn, int flags) {
+   }
+ 
+   if (ssl != ctrl_ssl &&
++      ctrl_ssl != NULL &&
+       SSL_get_session(ssl) == SSL_get_session(ctrl_ssl)) {
+     /* Uh-oh; our two SSL objects are pointing at the same SSL_SESSION object.
+      * This can happen when the SSL_SESSION is resumed, enabled by session

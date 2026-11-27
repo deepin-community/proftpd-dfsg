@@ -1,0 +1,44 @@
+diff --git a/contrib/mod_sftp/fxp.c b/contrib/mod_sftp/fxp.c
+index d61e71046..8e867649c 100644
+--- a/contrib/mod_sftp/fxp.c
++++ b/contrib/mod_sftp/fxp.c
+@@ -3381,6 +3381,23 @@ static struct fxp_packet *fxp_packet_read(uint32_t channel_id,
+       "(%lu bytes remaining in buffer)", (unsigned long) fxp->packet_len,
+       (unsigned long) buflen);
+ 
++    /* We require 5 bytes of SFTP request data at a minimum: 1 byte for the
++     * request type, and 4 bytes for the payload length (Issue #2115).
++     */
++    if (fxp->packet_len < 5) {
++      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,
++        "illegal SFTP request length (%lu bytes, require at least 5 bytes), "
++        "rejecting", (unsigned long) fxp->packet_len);
++      SFTP_DISCONNECT_CONN(SFTP_SSH2_DISCONNECT_BY_APPLICATION, NULL);
++    }
++
++    if (fxp->packet_len > FXP_MAX_PACKET_LEN) {
++      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,
++        "received excessive SFTP packet (len %lu > max %lu bytes), rejecting",
++        (unsigned long) fxp->packet_len, (unsigned long) FXP_MAX_PACKET_LEN);
++      SFTP_DISCONNECT_CONN(SFTP_SSH2_DISCONNECT_BY_APPLICATION, NULL);
++    }
++
+     if (buflen == 0) {
+       fxp_packet_set_packet(fxp);
+       fxp_packet_clear_cache();
+@@ -13674,15 +13691,6 @@ int sftp_fxp_handle_packet(pool *p, void *ssh2, uint32_t channel_id,
+         (unsigned long) channel_id);
+     }
+ 
+-    if (fxp->packet_len > FXP_MAX_PACKET_LEN) {
+-      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,
+-        "received excessive SFTP packet (len %lu > max %lu bytes), rejecting",
+-        (unsigned long) fxp->packet_len, (unsigned long) FXP_MAX_PACKET_LEN);
+-      destroy_pool(fxp->pool);
+-      errno = EPERM;
+-      return -1;
+-    }
+-
+     fxp_session = fxp_get_session(channel_id);
+     if (fxp_session == NULL) {
+       (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,

@@ -1,3 +1,38 @@
+proftpd-dfsg (1.3.8.c+dfsg-4+deb13u5) trixie; urgency=medium
+
+  * Add patches for CVE-2026-119147, CVE-2026-119146 & CVE-2026-119364 .
+
+ -- Hilmar Preuße <hille42@debian.org>  Fri, 06 Nov 2026 22:43:56 +0100
+
+proftpd-dfsg (1.3.8.c+dfsg-4+deb13u4) trixie; urgency=medium
+
+  * Add patches for mod_tls spins at 100% CPU (...) (Closes: #1151962).
+
+ -- Hilmar Preuße <hille42@debian.org>  Sun, 25 Oct 2026 22:16:31 +0100
+
+proftpd-dfsg (1.3.8.c+dfsg-4+deb13u3) trixie; urgency=medium
+
+  * Add patch for CVE-2026-44331 (Closes: #1135840).
+  * Add patch for CVE-2026-53994.
+  * Add patch for CVE-2026-63091.
+  * Add patch for CVE-2026-63090.
+
+ -- Hilmar Preuße <hille42@debian.org>  Wed, 22 Jul 2026 22:58:45 +0200
+
+proftpd-dfsg (1.3.8.c+dfsg-4+deb13u2) trixie; urgency=medium
+
+  * Add patch for CVE-2026-42167 (Closes: #1135119).
+    Thanks to Paul Howarth for adaption to 1.3.8c.
+
+ -- Hilmar Preuße <hille42@debian.org>  Fri, 01 May 2026 12:48:15 +0200
+
+proftpd-dfsg (1.3.8.c+dfsg-4+deb13u1) trixie; urgency=medium
+
+  [ Evgeni Golov <evgeni@debian.org> ]
+  * Do not remove non-empty /srv/ftp upon purge (Closes: #1119295).
+
+ -- Hilmar Preuße <hille42@debian.org>  Sun, 09 Nov 2025 14:49:42 +0100
+
 proftpd-dfsg (1.3.8.c+dfsg-4) unstable; urgency=medium
 
   * Add code to proftp postinst to force mod_ls.c & mod_xfer.c into
