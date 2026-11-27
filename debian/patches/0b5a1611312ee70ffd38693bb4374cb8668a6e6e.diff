@@ -1,0 +1,379 @@
+From 0b5a1611312ee70ffd38693bb4374cb8668a6e6e Mon Sep 17 00:00:00 2001
+From: TJ Saunders <tj@castaglia.org>
+Date: Wed, 16 Jul 2025 09:26:28 -0700
+Subject: [PATCH] Issue #1963: When shutting down our TLS connections, check
+ for the case where the same `SSL_SESSION *` is used by different `SSL *`, and
+ manually avoid a potential double-free.
+
+---
+ contrib/mod_tls.c                            |  61 +++++--
+ tests/t/lib/ProFTPD/Tests/Modules/mod_tls.pm | 174 +++++++++++++------
+ 2 files changed, 172 insertions(+), 63 deletions(-)
+
+--- proftpd.orig/contrib/mod_tls.c
++++ proftpd/contrib/mod_tls.c
+@@ -8874,8 +8874,8 @@
+ 
+     /* 'close_notify' not already sent; send it now. */
+     pr_trace_msg(trace_channel, 17,
+-      "shutting down TLS session, 'close_notify' not already sent; "
+-      "sending now");
++      "shutting down %s TLS session, 'close_notify' not already sent; "
++      "sending now", ssl == ctrl_ssl ? "control" : "data");
+     lineno = __LINE__ + 1;
+     res = SSL_shutdown(ssl);
+   }
+@@ -8891,8 +8891,8 @@
+         int is_ssl_data = FALSE, xerrno;
+ 
+         pr_trace_msg(trace_channel, 17,
+-          "shutting down TLS session, 'close_notify' not received; "
+-          "peeking at next data");
++          "shutting down %s TLS session, 'close_notify' not received; "
++          "peeking at next data", ssl == ctrl_ssl ? "control" : "data");
+ 
+         /* This where we need to peek at the next data, to see whether we
+          * dealing with a well-behaved FTPS client, which will be sending
+@@ -8929,8 +8929,9 @@
+         xerrno = errno;
+ 
+         pr_trace_msg(trace_channel, 17,
+-          "shutting down TLS session, 'close_notify' not received; "
+-          "SSL_shutdown() returned %d", res);
++          "shutting down %s TLS session, 'close_notify' not received; "
++          "SSL_shutdown() returned %d", ssl == ctrl_ssl ? "control" : "data",
++          res);
+ 
+         errno = xerrno;
+       }
+@@ -9071,10 +9072,39 @@
+     session.total_raw_out += bwritten;
+   }
+ 
++  if (ssl != ctrl_ssl &&
++      SSL_get_session(ssl) == SSL_get_session(ctrl_ssl)) {
++    /* Uh-oh; our two SSL objects are pointing at the same SSL_SESSION object.
++     * This can happen when the SSL_SESSION is resumed, enabled by session
++     * caching.  Which is normally a Good Thing.
++     *
++     * But Issue#1963 happens when that SSL_SESSION object is freed twice:
++     * once via SSL_free() on this SSL, and again on SSL_free() for the
++     * other SSL.  Yuck.
++     *
++     * So we manually handle the situation by clearing the duplicate
++     * SSL_SESSION pointer from the data SSL.  Why the data SSL, and not the
++     * control SSL?  We could be handling multiple concurrent data transfers,
++     * and/or the client may reuse the session again on a subsequent data
++     * transfer.
++     *
++     * Note that older OpenSSL versions used two different SSL_SESSION objects,
++     * hence why we have not seen this occur frequently in the past.  (Or it
++     * was not reported.)  And for TLSv1.3 resumed sessions, the SSL_SESSION
++     * objects are different, hence no double-free.
++     */
++    pr_trace_msg(trace_channel, 29,
++      "data SSL %p being ended has same SSL_SESSION %p as control SSL, "
++      "clearing the data SSL pointer manually (Issue #1963)", ssl,
++      SSL_get_session(ssl));
++    SSL_set_session(ssl, NULL);
++  }
++
+   SSL_free(ssl);
+ 
+   if (res >= 0) {
+-    pr_trace_msg(trace_channel, 17, "TLS session cleanly shut down");
++    pr_trace_msg(trace_channel, 17, "%s TLS session cleanly shut down",
++      ssl == ctrl_ssl ? "control" : "data");
+   }
+ }
+ 
+@@ -15805,13 +15835,13 @@
+    * and thus we have a read-only copy.
+    */
+ 
+-  if (tls_ctrl_netio) {
++  if (tls_ctrl_netio != NULL) {
+     pr_unregister_netio(PR_NETIO_STRM_CTRL);
+     destroy_pool(tls_ctrl_netio->pool);
+     tls_ctrl_netio = NULL;
+   }
+ 
+-  if (tls_data_netio) {
++  if (tls_data_netio != NULL) {
+     pr_unregister_netio(PR_NETIO_STRM_DATA);
+     destroy_pool(tls_data_netio->pool);
+     tls_data_netio = NULL;
+@@ -15822,7 +15852,6 @@
+   }
+ 
+   tls_closelog();
+-  return;
+ }
+ 
+ static void tls_timeout_ev(const void *event_data, void *user_data) {
+@@ -17150,12 +17179,18 @@
+ 
+ static char *get_sess_id_text(BIO *bio, const unsigned char *id,
+     unsigned int idsz) {
+-  register unsigned int i;
+   char *data = NULL;
+   long datalen;
+ 
+-  for (i = 0; i < idsz; i++) {
+-    BIO_printf(bio, "%02x", id[i]);
++  if (idsz > 0) {
++    register unsigned int i;
++
++    for (i = 0; i < idsz; i++) {
++      BIO_printf(bio, "%02x", id[i]);
++    }
++
++  } else {
++    BIO_printf(bio, "%s", "NONE");
+   }
+ 
+   datalen = BIO_get_mem_data(bio, &data);
+--- proftpd.orig/tests/t/lib/ProFTPD/Tests/Modules/mod_tls.pm
++++ proftpd/tests/t/lib/ProFTPD/Tests/Modules/mod_tls.pm
+@@ -135,6 +135,11 @@
+     test_class => [qw(forking)],
+   },
+ 
++  tls_list_with_session_reuse => {
++    order => ++$order,
++    test_class => [qw(forking)],
++  },
++
+   tls_list_with_no_session_reuse_required_opt => {
+     order => ++$order,
+     test_class => [qw(forking)],
+@@ -3800,49 +3805,19 @@
+ sub tls_list_no_session_reuse {
+   my $self = shift;
+   my $tmpdir = $self->{tmpdir};
+-
+-  my $config_file = "$tmpdir/tls.conf";
+-  my $pid_file = File::Spec->rel2abs("$tmpdir/tls.pid");
+-  my $scoreboard_file = File::Spec->rel2abs("$tmpdir/tls.scoreboard");
+-
+-  my $log_file = test_get_logfile();
+-
+-  my $auth_user_file = File::Spec->rel2abs("$tmpdir/tls.passwd");
+-  my $auth_group_file = File::Spec->rel2abs("$tmpdir/tls.group");
+-
+-  my $user = 'proftpd';
+-  my $passwd = 'test';
+-  my $group = 'ftpd';
+-  my $home_dir = File::Spec->rel2abs($tmpdir);
+-  my $uid = 500;
+-  my $gid = 500;
+-
+-  # Make sure that, if we're running as root, that the home directory has
+-  # permissions/privs set for the account we create
+-  if ($< == 0) {
+-    unless (chmod(0755, $home_dir)) {
+-      die("Can't set perms on $home_dir to 0755: $!");
+-    }
+-
+-    unless (chown($uid, $gid, $home_dir)) {
+-      die("Can't set owner of $home_dir to $uid/$gid: $!");
+-    }
+-  }
+-
+-  auth_user_write($auth_user_file, $user, $passwd, $uid, $gid, $home_dir,
+-    '/bin/bash');
+-  auth_group_write($auth_group_file, $group, $gid, $user);
++  my $setup = test_setup($tmpdir, 'tls');
+ 
+   my $cert_file = File::Spec->rel2abs('t/etc/modules/mod_tls/server-cert.pem');
+   my $ca_file = File::Spec->rel2abs('t/etc/modules/mod_tls/ca-cert.pem');
+ 
+   my $config = {
+-    PidFile => $pid_file,
+-    ScoreboardFile => $scoreboard_file,
+-    SystemLog => $log_file,
++    PidFile => $setup->{pid_file},
++    ScoreboardFile => $setup->{scoreboard_file},
++    SystemLog => $setup->{log_file},
+ 
+-    AuthUserFile => $auth_user_file,
+-    AuthGroupFile => $auth_group_file,
++    AuthUserFile => $setup->{auth_user_file},
++    AuthGroupFile => $setup->{auth_group_file},
++    AuthOrder => 'mod_auth_file.c',
+ 
+     IfModules => {
+       'mod_delay.c' => {
+@@ -3851,7 +3826,7 @@
+ 
+       'mod_tls.c' => {
+         TLSEngine => 'on',
+-        TLSLog => $log_file,
++        TLSLog => $setup->{log_file},
+         TLSRequired => 'on',
+         TLSRSACertificateFile => $cert_file,
+         TLSCACertificateFile => $ca_file,
+@@ -3859,7 +3834,8 @@
+     },
+   };
+ 
+-  my ($port, $config_user, $config_group) = config_write($config_file, $config);
++  my ($port, $config_user, $config_group) = config_write($setup->{config_file},
++    $config);
+ 
+   # Open pipes, for use between the parent and child processes.  Specifically,
+   # the child will indicate when it's done with its test by writing a message
+@@ -3887,7 +3863,7 @@
+         Croak => 1,
+       );
+ 
+-      unless ($client->login($user, $passwd)) {
++      unless ($client->login($setup->{user}, $setup->{passwd})) {
+         die("Can't login: " . $client->last_message());
+       }
+ 
+@@ -3908,9 +3884,8 @@
+       my $resp = $client->message();
+       my $expected = '425 Unable to build data connection: Operation not permitted';
+       $self->assert($expected eq $resp,
+-        test_msg("Expected '$expected', got '$resp'"));
++        test_msg("Expected response '$expected', got '$resp'"));
+     };
+-
+     if ($@) {
+       $ex = $@;
+     }
+@@ -3919,7 +3894,7 @@
+     $wfh->flush();
+ 
+   } else {
+-    eval { server_wait($config_file, $rfh) };
++    eval { server_wait($setup->{config_file}, $rfh) };
+     if ($@) {
+       warn($@);
+       exit 1;
+@@ -3929,18 +3904,117 @@
+   }
+ 
+   # Stop server
+-  server_stop($pid_file);
+-
++  server_stop($setup->{pid_file});
+   $self->assert_child_ok($pid);
+ 
+-  if ($ex) {
+-    test_append_logfile($log_file, $ex);
+-    unlink($log_file);
++  test_cleanup($setup->{log_file}, $ex);
++}
+ 
+-    die($ex);
++sub tls_list_with_session_reuse {
++  my $self = shift;
++  my $tmpdir = $self->{tmpdir};
++  my $setup = test_setup($tmpdir, 'tls');
++
++  my $cert_file = File::Spec->rel2abs('t/etc/modules/mod_tls/server-cert.pem');
++  my $ca_file = File::Spec->rel2abs('t/etc/modules/mod_tls/ca-cert.pem');
++
++  my $config = {
++    PidFile => $setup->{pid_file},
++    ScoreboardFile => $setup->{scoreboard_file},
++    SystemLog => $setup->{log_file},
++
++    AuthUserFile => $setup->{auth_user_file},
++    AuthGroupFile => $setup->{auth_group_file},
++    AuthOrder => 'mod_auth_file.c',
++
++    IfModules => {
++      'mod_delay.c' => {
++        DelayEngine => 'off',
++      },
++
++      'mod_tls.c' => {
++        TLSEngine => 'on',
++        TLSLog => $setup->{log_file},
++        TLSRequired => 'on',
++        TLSRSACertificateFile => $cert_file,
++        TLSCACertificateFile => $ca_file,
++      },
++    },
++  };
++
++  my ($port, $config_user, $config_group) = config_write($setup->{config_file},
++    $config);
++
++  # Open pipes, for use between the parent and child processes.  Specifically,
++  # the child will indicate when it's done with its test by writing a message
++  # to the parent.
++  my ($rfh, $wfh);
++  unless (pipe($rfh, $wfh)) {
++    die("Can't open pipe: $!");
+   }
+ 
+-  unlink($log_file);
++  require Net::FTPSSL;
++
++  my $ex;
++
++  # Fork child
++  $self->handle_sigchld();
++  defined(my $pid = fork()) or die("Can't fork: $!");
++  if ($pid) {
++    eval {
++      # Give the server a chance to start up
++      sleep(2);
++
++      my $client = Net::FTPSSL->new('127.0.0.1',
++        Encryption => 'E',
++        Port => $port,
++        Croak => 1,
++        ReuseSession => 1,
++      );
++
++      unless ($client->login($setup->{user}, $setup->{passwd})) {
++        die("Can't login: " . $client->last_message());
++      }
++
++      # Since we are requiring SSL session reuse for data transfers,
++      # and this client IS using SSL session resumption, I expect
++      # these data transfers to succeed.
++      for (my $i = 0; $i < 3; $i++) {
++        my $res = $client->list('.');
++        unless ($res) {
++          die("LIST failed unexpectedly");
++        }
++
++        my $resp = $client->message();
++        my $expected = '226 Transfer complete';
++        $self->assert($expected eq $resp,
++          test_msg("Expected response '$expected', got '$resp'"));
++      }
++
++      $client->quit();
++    };
++    if ($@) {
++      $ex = $@;
++    }
++
++    $wfh->print("done\n");
++    $wfh->flush();
++
++  } else {
++    eval { server_wait($setup->{config_file}, $rfh) };
++    if ($@) {
++      warn($@);
++      exit 1;
++    }
++
++    exit 0;
++  }
++
++  # Stop server
++  server_stop($setup->{pid_file});
++  $self->assert_child_ok($pid);
++
++  test_cleanup($setup->{log_file}, $ex);
+ }
+ 
+ sub tls_list_with_no_session_reuse_required_opt {

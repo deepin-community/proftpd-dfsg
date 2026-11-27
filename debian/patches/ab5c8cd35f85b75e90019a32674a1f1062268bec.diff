@@ -1,0 +1,115 @@
+From ab5c8cd35f85b75e90019a32674a1f1062268bec Mon Sep 17 00:00:00 2001
+From: TJ Saunders <tj@castaglia.org>
+Date: Sat, 17 Oct 2026 13:12:56 -0700
+Subject: [PATCH] Issue #2374: Resolve the destination path in order to handle
+ any potential symlinks, and use the resolved path for <Limit> checks.
+
+---
+ contrib/mod_copy.c | 51 +++++++++++++++++++++++++++++++++++-----------
+ 1 file changed, 39 insertions(+), 12 deletions(-)
+
+--- proftpd.orig/contrib/mod_copy.c
++++ proftpd/contrib/mod_copy.c
+@@ -610,7 +610,29 @@
+       return PR_ERROR(cmd);
+     }
+ 
+-    to = dir_canonical_vpath(cmd->tmp_pool, decoded_path);
++    pr_fs_clear_cache2(decoded_path);
++    to = dir_realpath(cmd->tmp_pool, decoded_path);
++    if (to == NULL) {
++      /* Try using dir_best_path(), as xfer_pre_stor() does. */
++      to = dir_best_path(cmd->tmp_pool, decoded_path);
++    }
++
++    cmd_name = cmd->argv[0];
++    pr_cmd_set_name(cmd, "SITE_COPY");
++    if (!dir_check(cmd->tmp_pool, cmd, G_READ, from, NULL)) {
++      int xerrno = EPERM;
++
++      pr_cmd_set_name(cmd, cmd_name);
++      pr_log_debug(DEBUG8, "%s %s %s denied by <Limit> configuration",
++        (char *) cmd->argv[0], (char *) cmd->argv[1], from);
++      pr_response_add_err(R_550, "%s: %s", (char *) cmd->argv[2],
++        strerror(xerrno));
++
++      pr_cmd_set_errno(cmd, xerrno);
++      errno = xerrno;
++      return PR_ERROR(cmd);
++    }
++    pr_cmd_set_name(cmd, cmd_name);
+ 
+     cmd_name = cmd->argv[0];
+     pr_cmd_set_name(cmd, "SITE_COPY");
+@@ -618,8 +640,8 @@
+       int xerrno = EPERM;
+ 
+       pr_cmd_set_name(cmd, cmd_name);
+-      pr_log_debug(DEBUG8, "%s denied by <Limit> configuration",
+-        (char *) cmd->argv[0]);
++      pr_log_debug(DEBUG8, "%s %s %s denied by <Limit> configuration",
++        (char *) cmd->argv[0], (char *) cmd->argv[1], to);
+       pr_response_add_err(R_550, "%s: %s", (char *) cmd->argv[3],
+         strerror(xerrno));
+ 
+@@ -776,7 +798,7 @@
+ 
+ MODRET copy_cpto(cmd_rec *cmd) {
+   register unsigned int i;
+-  const char *from, *to = "";
++  const char *from, *to = "", *resolved_to;
+   char *cmd_name;
+   unsigned char *authenticated = NULL;
+ 
+@@ -834,16 +856,21 @@
+     to = pstrcat(cmd->tmp_pool, to, *to ? " " : "", decoded_path, NULL);
+   }
+ 
+-  to = dir_canonical_vpath(cmd->tmp_pool, to);
++  pr_fs_clear_cache2(to);
++  resolved_to = dir_realpath(cmd->tmp_pool, to);
++  if (resolved_to == NULL) {
++    /* Try using dir_best_path(), as xfer_pre_stor() does. */
++    resolved_to = dir_best_path(cmd->tmp_pool, to);
++  }
+ 
+   cmd_name = cmd->argv[0];
+   pr_cmd_set_name(cmd, "SITE_CPTO");
+-  if (!dir_check(cmd->tmp_pool, cmd, G_WRITE, to, NULL)) {
++  if (!dir_check(cmd->tmp_pool, cmd, G_WRITE, resolved_to, NULL)) {
+     int xerrno = EPERM;
+ 
+     pr_cmd_set_name(cmd, cmd_name);
+-    pr_log_debug(DEBUG8, "%s denied by <Limit> configuration",
+-      (char *) cmd->argv[0]);
++    pr_log_debug(DEBUG8, "%s %s %s denied by <Limit> configuration",
++      (char *) cmd->argv[0], (char *) cmd->argv[1], to);
+     pr_response_add_err(R_550, "%s: %s", to, strerror(xerrno));
+ 
+     pr_cmd_set_errno(cmd, xerrno);
+@@ -852,12 +879,12 @@
+   }
+   pr_cmd_set_name(cmd, cmd_name);
+ 
+-  if (copy_paths(cmd->tmp_pool, from, to) < 0) {
++  if (copy_paths(cmd->tmp_pool, from, resolved_to) < 0) {
+     int xerrno = errno;
+     const char *err_code = R_550;
+ 
+     pr_log_debug(DEBUG7, MOD_COPY_VERSION
+-      ": error copying '%s' to '%s': %s", from, to, strerror(xerrno));
++      ": error copying '%s' to '%s': %s", from, resolved_to, strerror(xerrno));
+ 
+     /* Check errno for EDQOUT (or the most appropriate alternative).
+      * (I hate the fact that FTP has a special response code just for
+@@ -882,8 +909,8 @@
+         break;
+     }
+ 
+-    pr_response_add_err(err_code, "%s: %s", (char *) cmd->argv[1],
+-      strerror(xerrno));
++    pr_response_add_err(err_code, "%s %s: %s", (char *) cmd->argv[0],
++      (char *) cmd->argv[1], strerror(xerrno));
+ 
+     pr_cmd_set_errno(cmd, xerrno);
+     errno = xerrno;

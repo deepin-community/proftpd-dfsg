@@ -27,8 +27,9 @@ then
 	fi
     rm -rf /etc/proftpd 
     rm -rf /var/log/proftpd
-    rm -rf /srv/ftp
     rm -f /etc/logrotate.d/proftpd-core
+    rm -f /srv/ftp/welcome.msg
+    rmdir --ignore-fail-on-non-empty /srv/ftp
     userdel --remove --force proftpd || true
     userdel ftp || true
 fi
