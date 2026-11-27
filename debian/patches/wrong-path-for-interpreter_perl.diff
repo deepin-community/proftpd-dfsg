@@ -1,0 +1,45 @@
+Description: Replace shebang line in perl scripts.
+Author: Hilmar Preusse <hille42@web.de>
+Last-Update: 2018-11-01
+Forwarded: Not needed, specific to Debian.
+
+--- proftpd.orig/contrib/ftpasswd
++++ proftpd/contrib/ftpasswd
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env perl
++#!/usr/bin/perl
+ # ---------------------------------------------------------------------------
+ # Copyright (C) 2000-2021 TJ Saunders <tj@castaglia.org>
+ #
+--- proftpd.orig/contrib/ftpmail
++++ proftpd/contrib/ftpmail
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env perl
++#!/usr/bin/perl
+ # ---------------------------------------------------------------------------
+ # Copyright (C) 2008-2017 TJ Saunders <tj@castaglia.org>
+ #
+--- proftpd.orig/contrib/ftpquota
++++ proftpd/contrib/ftpquota
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env perl
++#!/usr/bin/perl
+ # -------------------------------------------------------------------------
+ # Copyright (C) 2000-2017 TJ Saunders <tj@castaglia.org>
+ #
+--- proftpd.orig/src/prxs.in
++++ proftpd/src/prxs.in
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env perl
++#!/usr/bin/perl
+ 
+ # ---------------------------------------------------------------------------
+ # Copyright (C) 2008-2020 TJ Saunders <tj@castaglia.org>
+--- proftpd.orig/contrib/xferstats.holger-preiss
++++ proftpd/contrib/xferstats.holger-preiss
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env perl
++#!/usr/bin/perl
+ # ---------------------------------------------------------------------------
+ #
+ # USAGE: xferstats <options>

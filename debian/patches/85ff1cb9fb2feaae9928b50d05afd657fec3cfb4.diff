@@ -1,0 +1,23 @@
+From 85ff1cb9fb2feaae9928b50d05afd657fec3cfb4 Mon Sep 17 00:00:00 2001
+From: Manuel Mausz <manuel@mausz.at>
+Date: Thu, 11 Jan 2024 00:38:52 +0000
+Subject: [PATCH] Fetch pubkey from certificate before extracting its
+ parameters (#1769)
+
+This line has accidentally been removed in 028ce3
+---
+ contrib/mod_tls.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/contrib/mod_tls.c b/contrib/mod_tls.c
+index a092b8e15..b0c97c118 100644
+--- a/contrib/mod_tls.c
++++ b/contrib/mod_tls.c
+@@ -10054,6 +10054,7 @@ static void tls_setup_cert_environ(pool *p, const char *env_prefix,
+     bio = BIO_new(BIO_s_mem());
+ #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(HAVE_LIBRESSL)) || \
+     (defined(HAVE_LIBRESSL) && LIBRESSL_VERSION_NUMBER >= 0x3050000L)
++    pubkey = X509_get_X509_PUBKEY(cert);
+     X509_PUBKEY_get0_param(NULL, NULL, NULL, (X509_ALGOR **) &algo, pubkey);
+ #else
+     pubkey = cert->cert_info->key;

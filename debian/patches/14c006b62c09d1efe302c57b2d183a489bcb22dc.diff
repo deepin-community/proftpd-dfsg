@@ -1,0 +1,32 @@
+From 14c006b62c09d1efe302c57b2d183a489bcb22dc Mon Sep 17 00:00:00 2001
+From: TJ Saunders <tj@castaglia.org>
+Date: Thu, 12 Dec 2024 10:39:40 -0800
+Subject: [PATCH] The 1.3.8 branch doesn't have `session.user_homedir`.
+
+---
+ contrib/mod_sftp/auth.c | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/contrib/mod_sftp/auth.c b/contrib/mod_sftp/auth.c
+index c840bdc59..4015e9885 100644
+--- a/contrib/mod_sftp/auth.c
++++ b/contrib/mod_sftp/auth.c
+@@ -370,7 +370,6 @@ static int setup_env(pool *p, const char *user) {
+   }
+ 
+   session.user = pstrdup(p, pw->pw_name);
+-  session.user_homedir = pstrdup(p, pw->pw_dir);
+   session.group = pstrdup(p, pr_auth_gid2name(p, pw->pw_gid));
+ 
+   session.login_uid = pw->pw_uid;
+@@ -687,10 +686,6 @@ static int setup_env(pool *p, const char *user) {
+ 
+   session.user = pstrdup(session.pool, session.user);
+ 
+-  if (session.user_homedir != NULL) {
+-    session.user_homedir = pstrdup(session.pool, session.user_homedir);
+-  }
+-
+   if (session.group != NULL) {
+     session.group = pstrdup(session.pool, session.group);
+   }

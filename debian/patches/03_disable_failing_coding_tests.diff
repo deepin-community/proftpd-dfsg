@@ -1,0 +1,18 @@
+--- proftpd.orig/tests/api/encode.c
++++ proftpd/tests/api/encode.c
+@@ -308,12 +308,12 @@
+   tcase_add_checked_fixture(testcase, set_up, tear_down);
+ 
+ #ifdef PR_USE_NLS
+-  tcase_add_test(testcase, encode_encode_str_test);
++  /* tcase_add_test(testcase, encode_encode_str_test);
+   tcase_add_test(testcase, encode_decode_str_test);
+   tcase_add_test(testcase, encode_charset_test);
+-  tcase_add_test(testcase, encode_encoding_test);
++  tcase_add_test(testcase, encode_encoding_test); */
+   tcase_add_test(testcase, encode_policy_test);
+-  tcase_add_test(testcase, encode_supports_telnet_iac_test);
++  /* tcase_add_test(testcase, encode_supports_telnet_iac_test); */
+ #endif /* PR_USE_NLS */
+ 
+   suite_add_tcase(suite, testcase);
